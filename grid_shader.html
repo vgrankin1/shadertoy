@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html>
+
+<script id="vertex-shaderID" type="x-shader/x-vertex">
+uniform mat4 modelViewMatrix;
+uniform mat4 projectionMatrix;
+
+attribute  vec3 vPosition;
+attribute  vec4 vColor;
+
+varying vec4 fColor;
+
+void main()
+{
+    gl_Position =  vec4(vPosition, 1.0);
+    fColor = vec4(0.8, 0.0, 0.0, 1.0);//vColor;
+}
+</script>
+
+<script id="fragment-shaderID" type="x-shader/x-fragment">
+precision mediump float;
+varying vec4 fColor;
+uniform vec2 iResolution;
+uniform float scalei;
+
+void main()
+{
+	vec2 fragCoord = gl_FragCoord.xy;
+	vec2 uv = gl_FragCoord.xy / iResolution.xy;
+	
+
+	vec3 col = vec3(0.1, 0.1, 0.1);					//Background color
+    const vec3 color_xarrow = vec3(0.0, 0.8, 0.0);	//X-axis color
+    const vec3 color_yarrow = vec3(0.8, 0.0, 0.0);	//Y-axis color
+    const vec3 color_bgquad = vec3(0.4, 0.4, 0.4);	//big grid color
+    const vec3 color_ltquad = vec3(0.3, 0.3, 0.3);	//little grid color
+   
+    //float scalei = 0.999;
+    float stride = 10.0*scalei;						//stride of little grid
+	float bstride= 10.0*stride;						//stride of big grid
+    const float lineWidth = 1.0;					//grid line width
+    const float width_x = 1.0;						//X-axis width
+    const float width_y = 1.0;						//Y-axis width
+    
+    float off_x =   stride - mod(iResolution.x/2., stride);
+    float off_bx = bstride - mod(iResolution.x/2., bstride);
+    float off_y =   stride - mod(iResolution.y/2., stride);
+    float off_by = bstride - mod(iResolution.y/2., bstride);
+
+    #if defined CONSTRAINTA
+    float constrain_axis =
+        step(1.0 - scalei, 2.0*uv.y) * step(1.0 - scalei, 2.0*(1.-uv.y)) 
+    * 	step(1.0 - scalei, 2.0*uv.x) * step(1.0 - scalei, 2.0*(1.-uv.x));
+	#else
+	float constrain_axis = 1.0;
+    #endif
+    /*
+    if( abs(fragCoord.x - 0.5*iResolution.x) < width_x )
+        col.rgb = color_xarrow;/**/
+    float l_x = (1. - max(sign( abs(fragCoord.x - 0.5*iResolution.x) - width_x), 0.0)) * constrain_axis;
+    /*
+    if( abs(fragCoord.y - 0.5*iResolution.y) < width_y )
+			col.rgb = color_yarrow;/**/    
+   	float l_y = (1. - max(sign( abs(fragCoord.y - 0.5*iResolution.y) - width_y), 0.0)) * constrain_axis;
+    
+    /*
+	if( mod(fragCoord.x + off_bx, bstride) < lineWidth)
+        col.rgb = color_bgquad;/**/
+    float l_xb = max( sign( lineWidth - mod(fragCoord.x + off_bx, bstride) ), 0.0) * constrain_axis * (1. - l_x);
+    
+    /*
+    if(mod(fragCoord.y + off_by, bstride) < lineWidth)
+        col.rgb = color_bgquad;/**/
+    float l_yb = max( sign( lineWidth - mod(fragCoord.y + off_by, bstride) ), 0.0) * constrain_axis * (1. - l_y);
+    
+	/*if(mod(fragCoord.x + off_x, stride) < lineWidth)
+        col.rgb = color_ltquad;/**/
+    float l_xl = max( sign( lineWidth - mod(fragCoord.x + off_x, stride) ), 0.0) * constrain_axis * (1. - l_x);
+    
+    /*
+    if(mod(fragCoord.y + off_y, stride) < lineWidth)
+        col.rgb = color_ltquad;/**/
+    float l_yl = max( sign( lineWidth - mod(fragCoord.y + off_y, stride) ), 0.0) * constrain_axis * (1. - l_y);
+    
+    col.rgb = 
+        vec3(min(l_xl + l_yl, 1.0))*color_ltquad + 
+        vec3(min(l_xb + l_yb, 1.0))*color_bgquad +
+        vec3(l_x)*color_xarrow +
+        vec3(l_y)*color_yarrow;
+
+    gl_FragColor = vec4(col, 1.0);
+}
+</script>
+
+
+<body>
+	<canvas id="gl-canvas"  width=800 height=600>
+	Oops ... your browser doesn't support the HTML5 canvas element
+	</canvas>
+	<p id='idLabelScale'>Масштаб: 1.0 изменяется вращением колесика мыши</p>
+	<input type="checkbox" checked="checked" id='idCheckConstrainAxis'>Ограничить сетку
+<script>
+"use strict";
+	var scale = 1.0;
+	var canvas = null;
+	var context_names = ["webgl", "experimental-webgl", "webkit-3d", "moz-webgl"];
+	var gl = null;
+	for(var i = 0; i < context_names.length && gl === null; i++){	
+		gl = (canvas = document.getElementById("gl-canvas")).getContext(context_names[i]);
+	}
+	if(gl === null){
+		throw new Error("No webGL context found!");
+	}
+	
+	var programs = {one: gl.createProgram(), two: gl.createProgram()};
+	programs.vertShdr = gl.createShader( gl.VERTEX_SHADER );
+    gl.shaderSource( programs.vertShdr, document.getElementById( "vertex-shaderID" ).text );
+    gl.compileShader( programs.vertShdr );
+    if ( !gl.getShaderParameter(programs.vertShdr, gl.COMPILE_STATUS) ){
+        var msg = "Vertex shader failed to compile.  The error log is:" + "<pre>" + gl.getShaderInfoLog( programs.vertShdr ) + "</pre>";
+        throw new Error(msg);
+    }
+	
+	var fragElem = document.getElementById( "fragment-shaderID" );
+	programs.one.fragShdr = gl.createShader( gl.FRAGMENT_SHADER );
+	gl.shaderSource( programs.one.fragShdr, "#define CONSTRAINTA\n" + fragElem.text );
+    gl.compileShader( programs.one.fragShdr );
+	if ( !gl.getShaderParameter(programs.one.fragShdr, gl.COMPILE_STATUS) ) {
+        var msg = "Fragment shader1 failed to compile.  The error log is:" + "<pre>" + gl.getShaderInfoLog( programs.one.fragShdr ) + "</pre>";
+        throw new Error(msg);
+    }	
+	
+	programs.two.fragShdr = gl.createShader( gl.FRAGMENT_SHADER );
+    gl.shaderSource( programs.two.fragShdr, fragElem.text );
+    gl.compileShader( programs.two.fragShdr );
+	if ( !gl.getShaderParameter(programs.two.fragShdr, gl.COMPILE_STATUS) ) {
+        var msg = "Fragment shader2 failed to compile.  The error log is:" + "<pre>" + gl.getShaderInfoLog( programs.two.fragShdr ) + "</pre>";
+        throw new Error(msg);
+    }	
+		
+
+    gl.attachShader(programs.one, programs.vertShdr );
+    gl.attachShader(programs.one, programs.one.fragShdr );
+    gl.linkProgram(programs.one);
+    if ( !gl.getProgramParameter(programs.one, gl.LINK_STATUS) ) {
+        var msg = "Shader program failed to link.  The error log is:" + "<pre>" + gl.getProgramInfoLog(programs.one ) + "</pre>";
+        throw new Error(msg);
+    }
+	gl.useProgram(programs.one);
+	programs.a = programs.one;//Active program
+	
+    gl.attachShader(programs.two, programs.vertShdr );
+    gl.attachShader(programs.two, programs.two.fragShdr );
+    gl.linkProgram(programs.two);
+    if ( !gl.getProgramParameter(programs.two, gl.LINK_STATUS) ) {
+        var msg = "Shader program failed to link.  The error log is:" + "<pre>" + gl.getProgramInfoLog(programs.two ) + "</pre>";
+        throw new Error(msg);
+    }
+
+	
+	programs.one.iResolutionLoc =	gl.getUniformLocation(programs.one, "iResolution");
+	programs.one.scaleiLoc = 		gl.getUniformLocation(programs.one, "scalei");
+	programs.two.iResolutionLoc =	gl.getUniformLocation(programs.two, "iResolution");
+	programs.two.scaleiLoc = 		gl.getUniformLocation(programs.two, "scalei");
+	
+	
+	var obj1 = {data: [-1.0, 1.0, 0.0,  -1.0, -1.0, 0.0,  1.0, -1.0, 0.0,    -1.0, 1.0, 0.0,  1.0, 1.0, 0.0,  1.0,-1.0, 0.0]};
+	obj1.buffer = gl.createBuffer();
+	gl.bindBuffer(gl.ARRAY_BUFFER, obj1.buffer);
+	gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(obj1.data), gl.STATIC_DRAW);
+	var vPosition = gl.getAttribLocation( programs.one, "vPosition" );
+	gl.vertexAttribPointer(vPosition, 3, gl.FLOAT, false, 0, 0);
+	gl.enableVertexAttribArray( vPosition );
+
+	document.addEventListener('wheel', function(event){
+		scale += event.deltaY*0.0005;
+		if(scale <= 0.1) scale = 0.1;
+		document.getElementById('idLabelScale').innerHTML = 'Масштаб: ' + scale;
+		gl.uniform1f(programs.a.scaleiLoc, 1.0/scale );
+	});
+	gl.uniform1f(programs.a.scaleiLoc, 1.0/scale );
+
+
+	document.getElementById('idCheckConstrainAxis').addEventListener('change', function(){
+		if(this.checked){
+			gl.useProgram(programs.one);
+			programs.a = programs.one;
+		} else {
+			gl.useProgram(programs.two);
+			programs.a = programs.two;
+        }
+		gl.uniform1f(programs.a.scaleiLoc, 1.0/scale );
+		gl.uniform2fv(programs.a.iResolutionLoc, new Float32Array([canvas.width, canvas.height]) );
+	});
+
+	function onResize(event){
+		canvas.width  = window.innerWidth - 30;
+		canvas.height = window.innerHeight - 100;
+		gl.viewport( 0, 0, canvas.width, canvas.height );
+		gl.uniform2fv(programs.a.iResolutionLoc, new Float32Array([canvas.width, canvas.height]) );
+	}
+	window.addEventListener("resize", onResize);
+	onResize();
+	
+
+    gl.clearColor( 1.0, 1.0, 1.0, 1.0 );
+	function draw(){
+		gl.clear( gl.COLOR_BUFFER_BIT );
+		
+		gl.drawArrays(gl.TRIANGLES, 0, 6);
+		gl.flush();
+		requestAnimationFrame( draw );
+	}
+	draw();
+	
+
+</script>
+</body>
+</html>
